@@ -7,34 +7,48 @@ router.get('/', async (req, res) => {
   try {
     const entries = await Entry.find().sort({ timestamp: 1 });
     
-    let textContent = '';
+    // Group entries by date while preserving chronological order
+    const grouped = {};
     entries.forEach(entry => {
-      textContent += `---
+      const d = entry.date || 'Unknown Date';
+      if (!grouped[d]) {
+        grouped[d] = [];
+      }
+      grouped[d].push(entry);
+    });
 
-## ARSHI GPS VEHICLE ENTRY REPORT
+    let textContent = '';
+    
+    Object.keys(grouped).forEach(date => {
+      const dateEntries = grouped[date];
+      textContent += `====================================================================
+DATE: ${date} (Total Entries: ${dateEntries.length})
+====================================================================\n\n`;
 
-Customer Name : ${entry.customerName || 'N/A'}
-Customer Mobile : ${entry.customerMobile || 'N/A'}
-ICC ID : ${entry.iccId || entry.aadharNumber || 'N/A'}
-Customer Address : ${entry.customerAddress || 'N/A'}
+      dateEntries.forEach((entry, index) => {
+        textContent += `${index + 1}. Customer Details:
+   Customer Name    : ${entry.customerName || 'N/A'}
+   Customer Mobile  : ${entry.customerMobile || 'N/A'}
+   ICC ID           : ${entry.iccId || entry.aadharNumber || 'N/A'}
+   Customer Address : ${entry.customerAddress || 'N/A'}
 
-IMEI : ${entry.imei}
-RTO : ${entry.rto}
-Vehicle Type : ${entry.vehicleType}
-Vehicle Make : ${entry.vehicleMake}
-Vehicle Model : ${entry.vehicleModel}
-Registration Year : ${entry.registrationYear}
-Engine Number : ${entry.engineNumber}
-Chassis Number : ${entry.chassisNumber}
-Vehicle Number : ${entry.vehicleNumber}
-Reference : ${entry.reference}
-SIM 1 : ${entry.simNumber1}
-SIM 2 : ${entry.simNumber2}
+   Vehicle Details:
+   IMEI             : ${entry.imei || 'N/A'}
+   RTO              : ${entry.rto || 'N/A'}
+   Vehicle Type     : ${entry.vehicleType || 'N/A'}
+   Vehicle Make     : ${entry.vehicleMake || 'N/A'}
+   Vehicle Model    : ${entry.vehicleModel || 'N/A'}
+   Registration Year: ${entry.registrationYear || 'N/A'}
+   Engine Number    : ${entry.engineNumber || 'N/A'}
+   Chassis Number   : ${entry.chassisNumber || 'N/A'}
+   Vehicle Number   : ${entry.vehicleNumber || 'N/A'}
+   Reference        : ${entry.reference || 'N/A'}
+   SIM 1            : ${entry.simNumber1 || 'N/A'}
+   SIM 2            : ${entry.simNumber2 || 'N/A'}
 
-Date : ${entry.date}
-Time : ${entry.time}
-
----\n\n`;
+   Time             : ${entry.time || 'N/A'}
+--------------------------------------------------------------------\n\n`;
+      });
     });
 
     res.setHeader('Content-Type', 'text/plain');

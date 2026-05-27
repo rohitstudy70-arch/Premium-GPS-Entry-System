@@ -4,7 +4,7 @@
 // ==========================================
 
 import { useState, useEffect, useRef } from 'react';
-import { submitEntry, getTodayEntries, getTotalEntriesCount, editEntry, extractFromImage } from '../api';
+import { submitEntry, getTodayEntries, getTotalEntriesCount, editEntry, extractFromImage, resetAllEntries, restoreEntries } from '../api';
 
 // Initial empty form state
 const initialFormState = {
@@ -38,9 +38,10 @@ function Dashboard({ user, onLogout }) {
   const [editingTimestamp, setEditingTimestamp] = useState(null);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Image Upload States
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  // File Upload/Extraction States
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [filePreview, setFilePreview] = useState(null);
+  const [fileType, setFileType] = useState(null); // 'image' or 'pdf'
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState('');
   const [extractSuccess, setExtractSuccess] = useState(false);
@@ -86,42 +87,54 @@ function Dashboard({ user, onLogout }) {
     setFormData(initialFormState);
     setEditingTimestamp(null);
     setError('');
-    setImageFile(null);
-    setImagePreview(null);
+    setSelectedFile(null);
+    setFilePreview(null);
+    setFileType(null);
     setExtractSuccess(false);
     setExtractError('');
   };
 
-  // --- Image Upload Handlers ---
-  const handleImageSelect = (file) => {
-    if (!file || !file.type.startsWith('image/')) {
-      setExtractError('Sirf image file select karein (JPG, PNG, WEBP, etc.)');
+  // --- File Upload & Extraction Handlers ---
+  const handleFileSelect = (file) => {
+    if (!file) return;
+    const isImage = file.type.startsWith('image/');
+    const isPdf = file.type === 'application/pdf';
+
+    if (!isImage && !isPdf) {
+      setExtractError('Sirf Image file (JPG, PNG, WEBP) ya PDF document select karein.');
       return;
     }
-    setImageFile(file);
+
+    setSelectedFile(file);
+    setFileType(isImage ? 'image' : 'pdf');
     setExtractError('');
     setExtractSuccess(false);
-    const reader = new FileReader();
-    reader.onloadend = () => setImagePreview(reader.result);
-    reader.readAsDataURL(file);
+
+    if (isImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => setFilePreview(reader.result);
+      reader.readAsDataURL(file);
+    } else {
+      setFilePreview(null);
+    }
   };
 
   const handleFileInput = (e) => {
-    if (e.target.files[0]) handleImageSelect(e.target.files[0]);
+    if (e.target.files[0]) handleFileSelect(e.target.files[0]);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
-    if (e.dataTransfer.files[0]) handleImageSelect(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files[0]) handleFileSelect(e.dataTransfer.files[0]);
   };
 
   const handleDragOver = (e) => { e.preventDefault(); setDragOver(true); };
   const handleDragLeave = () => setDragOver(false);
 
   const handleExtract = async () => {
-    if (!imageFile) {
-      setExtractError('Pehle koi image select karein.');
+    if (!selectedFile) {
+      setExtractError('Pehle koi file select karein.');
       return;
     }
     setExtracting(true);
@@ -130,7 +143,7 @@ function Dashboard({ user, onLogout }) {
 
     try {
       const fd = new FormData();
-      fd.append('image', imageFile);
+      fd.append('image', selectedFile);
       const response = await extractFromImage(fd);
 
       if (response.data.success) {
@@ -150,7 +163,7 @@ function Dashboard({ user, onLogout }) {
         document.querySelector('.form-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     } catch (err) {
-      const msg = err.response?.data?.message || 'Image extract karne mein error aaya. Dobara try karein.';
+      const msg = err.response?.data?.message || 'File process karne mein error aaya. Dobara try karein.';
       setExtractError(msg);
     } finally {
       setExtracting(false);
@@ -205,6 +218,51 @@ function Dashboard({ user, onLogout }) {
     onLogout();
   };
 
+  // Reset all entries in MongoDB
+  const handleResetAll = async () => {
+    const firstConfirm = window.confirm("⚠️ WARNING: Kya aap sach me saari entries delete/reset karna chahte hain?");
+    if (!firstConfirm) return;
+    
+    const secondConfirm = window.confirm("🚨 LAST WARNING: Saara data permanently delete ho jayega aur report empty ho jayegi. Kya aap sach me confirm karte hain?");
+    if (!secondConfirm) return;
+    
+    try {
+      setLoading(true);
+      const res = await resetAllEntries();
+      if (res.data.success) {
+        alert("✅ Saari entries successfully delete ho gayi hain!");
+        fetchTodayEntries();
+        fetchTotalCount();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Reset karne me error aaya: " + (err.response?.data?.message || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Restore entries from backup (one-time)
+  const handleRestoreBackup = async () => {
+    const confirmRestore = window.confirm("🔄 Kya aap sach me last deleted entries ko restore karna chahte hain? Ye sirf ek baar kaam karega.");
+    if (!confirmRestore) return;
+    
+    try {
+      setLoading(true);
+      const res = await restoreEntries();
+      if (res.data.success) {
+        alert(`✅ ${res.data.count} entries successfully restore ho gayi hain!`);
+        fetchTodayEntries();
+        fetchTotalCount();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Restore failed: " + (err.response?.data?.message || "Koi backup data available nahi hai ya ye pehle hi restore ho chuka hai."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Close success popup
   const closeSuccess = () => {
     setShowSuccess(false);
@@ -235,26 +293,74 @@ function Dashboard({ user, onLogout }) {
             <h2>Vehicle Entry Form</h2>
             <p>Enter GPS device installation and vehicle details below.</p>
           </div>
-          <div className="total-badge" style={{ background: '#0f172a', color: 'white', padding: '10px 16px', borderRadius: '12px', textAlign: 'center', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
-            <div style={{ fontSize: '10px', opacity: 0.8, letterSpacing: '1px', textTransform: 'uppercase' }}>TOTAL ENTRIES</div>
-            <div style={{ fontSize: '24px', fontWeight: 'bold', lineHeight: '1.2' }}>{totalCount}</div>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="total-badge" style={{ background: '#0f172a', color: 'white', padding: '10px 16px', borderRadius: '12px', textAlign: 'center', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+              <div style={{ fontSize: '10px', opacity: 0.8, letterSpacing: '1px', textTransform: 'uppercase' }}>TOTAL ENTRIES</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', lineHeight: '1.2' }}>{totalCount}</div>
+            </div>
+            <button 
+              type="button" 
+              onClick={handleResetAll} 
+              style={{ 
+                background: '#dc2626', 
+                color: 'white', 
+                padding: '10px 16px', 
+                borderRadius: '12px', 
+                fontSize: '12px', 
+                fontWeight: 'bold', 
+                border: 'none', 
+                cursor: 'pointer', 
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'background 0.2s'
+              }}
+              onMouseOver={(e) => e.target.style.background = '#b91c1c'}
+              onMouseOut={(e) => e.target.style.background = '#dc2626'}
+            >
+              🗑️ Reset Count
+            </button>
+            <button 
+              type="button" 
+              onClick={handleRestoreBackup} 
+              style={{ 
+                background: '#059669', 
+                color: 'white', 
+                padding: '10px 16px', 
+                borderRadius: '12px', 
+                fontSize: '12px', 
+                fontWeight: 'bold', 
+                border: 'none', 
+                cursor: 'pointer', 
+                boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'background 0.2s'
+              }}
+              onMouseOver={(e) => e.target.style.background = '#047857'}
+              onMouseOut={(e) => e.target.style.background = '#059669'}
+            >
+              🔄 Undo Last Reset
+            </button>
           </div>
         </div>
 
-        {/* --- Image Upload Section --- */}
+        {/* --- Image/PDF Upload Section --- */}
         <div className="image-upload-card">
           <div className="image-upload-header">
-            <div className="image-upload-icon">📸</div>
+            <div className="image-upload-icon">📄</div>
             <div>
-              <div className="image-upload-title">Smart Image Auto-Fill</div>
-              <div className="image-upload-subtitle">RC Book / Vehicle Document ki photo upload karo — AI automatically form fill kar dega</div>
+              <div className="image-upload-title">Smart Document Auto-Fill</div>
+              <div className="image-upload-subtitle">RC Book / Vehicle Document ki photo ya PDF upload karo — AI automatically form fill kar dega</div>
             </div>
           </div>
 
           <div className="image-upload-body">
             {/* Drop Zone */}
             <div
-              className={`drop-zone ${dragOver ? 'drag-over' : ''} ${imagePreview ? 'has-image' : ''}`}
+              className={`drop-zone ${dragOver ? 'drag-over' : ''} ${(filePreview || selectedFile) ? 'has-image' : ''}`}
               onClick={() => fileInputRef.current?.click()}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -263,23 +369,31 @@ function Dashboard({ user, onLogout }) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf"
                 style={{ display: 'none' }}
                 onChange={handleFileInput}
                 id="image-upload-input"
               />
-              {imagePreview ? (
+              {selectedFile ? (
                 <div className="image-preview-container">
-                  <img src={imagePreview} alt="Uploaded document" className="image-preview" />
+                  {fileType === 'image' && filePreview ? (
+                    <img src={filePreview} alt="Uploaded document" className="image-preview" />
+                  ) : (
+                    <div className="pdf-preview-placeholder" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '150px', padding: '20px', color: '#1e293b' }}>
+                      <span style={{ fontSize: '48px' }}>📕</span>
+                      <span style={{ fontWeight: 'bold', marginTop: '10px', wordBreak: 'break-all', textAlign: 'center' }}>{selectedFile.name}</span>
+                      <span style={{ fontSize: '12px', opacity: 0.7 }}>({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                    </div>
+                  )}
                   <div className="image-preview-overlay">
-                    <span>🔄 Click to change image</span>
+                    <span>🔄 Click to change file</span>
                   </div>
                 </div>
               ) : (
                 <div className="drop-zone-placeholder">
                   <div className="drop-zone-icon">📄</div>
-                  <div className="drop-zone-text">Image yahan drop karo ya click karo</div>
-                  <div className="drop-zone-hint">JPG, PNG, WEBP supported • Max 10MB</div>
+                  <div className="drop-zone-text">Image ya PDF yahan drop karo ya click karo</div>
+                  <div className="drop-zone-hint">JPG, PNG, WEBP, PDF supported • Max 10MB</div>
                 </div>
               )}
             </div>
@@ -301,20 +415,20 @@ function Dashboard({ user, onLogout }) {
                 type="button"
                 className="btn-extract"
                 onClick={handleExtract}
-                disabled={extracting || !imageFile}
+                disabled={extracting || !selectedFile}
               >
                 {extracting ? (
                   <><span className="spinner" /> AI Process kar raha hai...</>
                 ) : (
-                  <>🔍 Image se Auto-Fill karo</>
+                  <>🔍 File se Auto-Fill karo</>
                 )}
               </button>
-              {imageFile && (
+              {selectedFile && (
                 <button
                   type="button"
                   className="btn-reset"
                   style={{ marginLeft: '10px' }}
-                  onClick={() => { setImageFile(null); setImagePreview(null); setExtractSuccess(false); setExtractError(''); }}
+                  onClick={() => { setSelectedFile(null); setFilePreview(null); setFileType(null); setExtractSuccess(false); setExtractError(''); }}
                 >
                   🗑️ Remove
                 </button>

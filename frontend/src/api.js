@@ -23,6 +23,8 @@ export const submitEntry = (entryData) => api.post('/entries', entryData);
 export const getTodayEntries = () => api.get('/entries/today');
 export const getTotalEntriesCount = () => api.get('/entries/count');
 export const editEntry = (timestamp, entryData) => api.put(`/entries/${timestamp}`, entryData);
+export const resetAllEntries = () => api.delete('/entries');
+export const restoreEntries = () => api.post('/entries/restore');
 export const extractFromImage = (formData) => api.post('/extract', formData, {
   headers: { 'Content-Type': 'multipart/form-data' },
   timeout: 30000, // 30 seconds for AI processing

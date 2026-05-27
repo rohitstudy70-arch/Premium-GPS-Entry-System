@@ -13,10 +13,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
       cb(null, true);
     } else {
-      cb(new Error('Sirf image files allowed hain (jpg, png, webp, etc.)'));
+      cb(new Error('Sirf image files aur PDF documents allowed hain (jpg, png, pdf, etc.)'));
     }
   }
 });
@@ -24,11 +24,11 @@ const upload = multer({
 // --- Gemini AI Setup ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// POST /api/extract - Extract vehicle data from image
+// POST /api/extract - Extract vehicle data from image or PDF
 router.post('/', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ success: false, message: 'Koi image upload nahi hui.' });
+      return res.status(400).json({ success: false, message: 'Koi file upload nahi hui.' });
     }
 
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
@@ -40,7 +40,7 @@ router.post('/', upload.single('image'), async (req, res) => {
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    const prompt = `You are a vehicle document OCR expert. Analyze this image (RC book, vehicle document, or any vehicle-related document) and extract the following information.
+    const prompt = `You are a vehicle document OCR expert. Analyze this document (image or PDF, such as an RC book, vehicle document, or any vehicle-related document) and extract the following information.
 
 Return ONLY a valid JSON object with these exact keys. If a field is not found or not visible, use an empty string "".
 
@@ -79,18 +79,18 @@ Rules:
 
 IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no code blocks.`;
 
-    // Convert image to base64 for Gemini
-    const imageBase64 = req.file.buffer.toString('base64');
-    const imageMimeType = req.file.mimetype;
+    // Convert file to base64 for Gemini
+    const fileBase64 = req.file.buffer.toString('base64');
+    const fileMimeType = req.file.mimetype;
 
-    const imagePart = {
+    const filePart = {
       inlineData: {
-        data: imageBase64,
-        mimeType: imageMimeType,
+        data: fileBase64,
+        mimeType: fileMimeType,
       },
     };
 
-    const result = await model.generateContent([prompt, imagePart]);
+    const result = await model.generateContent([prompt, filePart]);
     const responseText = result.response.text().trim();
 
     // Parse the JSON response
@@ -125,7 +125,7 @@ IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no code blo
 
     return res.json({
       success: true,
-      message: 'Image se data successfully extract ho gaya!',
+      message: 'File se data successfully extract ho gaya!',
       data: finalData
     });
 
@@ -138,7 +138,7 @@ IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no code blo
 
     return res.status(500).json({
       success: false,
-      message: error.message || 'Image process karne mein error aaya. Dobara try karein.'
+      message: error.message || 'File process karne mein error aaya. Dobara try karein.'
     });
   }
 });

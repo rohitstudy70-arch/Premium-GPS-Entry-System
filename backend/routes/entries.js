@@ -30,8 +30,8 @@ router.post('/', async (req, res) => {
     const data = req.body;
     
     const now = new Date();
-    const dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit' };
-    const timeOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true };
+    const dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Kolkata' };
+    const timeOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' };
     const autoDate = now.toLocaleDateString('en-IN', dateOptions);
     const autoTime = now.toLocaleTimeString('en-IN', timeOptions);
 
@@ -74,7 +74,7 @@ router.post('/', async (req, res) => {
 router.get('/today', async (req, res) => {
   try {
     const now = new Date();
-    const dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit' };
+    const dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Kolkata' };
     const todayDateStr = now.toLocaleDateString('en-IN', dateOptions);
 
     const entries = await Entry.find({ date: todayDateStr }).sort({ timestamp: -1 });
@@ -141,6 +141,60 @@ router.put('/:timestamp', async (req, res) => {
   } catch (error) {
     console.error('Error updating entry:', error);
     return res.status(500).json({ success: false, message: 'Server error: Failed to update entry.' });
+  }
+});
+
+const backupFilePath = path.join(__dirname, '../reports/backup.json');
+
+// DELETE /api/entries - Clear/reset all entries from database (saves backup)
+router.delete('/', async (req, res) => {
+  try {
+    const entries = await Entry.find({});
+    
+    if (entries.length > 0) {
+      fs.writeFileSync(backupFilePath, JSON.stringify(entries, null, 2), 'utf8');
+    } else {
+      if (fs.existsSync(backupFilePath)) {
+        fs.unlinkSync(backupFilePath);
+      }
+    }
+
+    await Entry.deleteMany({});
+    return res.json({ success: true, message: 'All entries have been reset successfully!' });
+  } catch (error) {
+    console.error('Error resetting entries:', error);
+    return res.status(500).json({ success: false, message: 'Failed to reset entries' });
+  }
+});
+
+// POST /api/entries/restore - Restore entries from backup JSON file (one-time restore)
+router.post('/restore', async (req, res) => {
+  try {
+    if (!fs.existsSync(backupFilePath)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Koi backup available nahi hai ya data pehle hi restore kiya ja chuka hai.' 
+      });
+    }
+
+    const backupData = JSON.parse(fs.readFileSync(backupFilePath, 'utf8'));
+    if (!Array.isArray(backupData) || backupData.length === 0) {
+      return res.status(400).json({ success: false, message: 'Backup file empty hai.' });
+    }
+
+    await Entry.insertMany(backupData);
+
+    // Delete backup file so it can only be restored ONCE
+    fs.unlinkSync(backupFilePath);
+
+    return res.json({ 
+      success: true, 
+      message: 'Data successfully restore ho gaya!', 
+      count: backupData.length 
+    });
+  } catch (error) {
+    console.error('Error restoring entries:', error);
+    return res.status(500).json({ success: false, message: 'Failed to restore entries' });
   }
 });
 
