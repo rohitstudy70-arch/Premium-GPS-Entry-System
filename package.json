@@ -1,0 +1,13 @@
+{
+  "name": "arshi-gps-vehicle-entry-system",
+  "version": "1.0.0",
+  "description": "Arshi GPS Vehicle Entry System - Frontend and Backend",
+  "scripts": {
+    "dev": "concurrently \"npm run server --prefix backend\" \"npm run dev --prefix frontend\"",
+    "start": "node backend/server.js",
+    "build": "npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend"
+  },
+  "dependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
