@@ -56,7 +56,7 @@ Return ONLY a valid JSON object with these exact keys. If a field is not found o
   "vehicleNumber": "",
   "customerName": "",
   "customerMobile": "",
-  "aadharNumber": "",
+  "iccId": "",
   "customerAddress": "",
   "reference": "",
   "simNumber1": "",
@@ -75,7 +75,7 @@ Rules:
 - chassisNumber: VIN or chassis number
 - engineNumber: engine number
 - For imei, simNumber1, simNumber2: usually not on RC documents, leave as ""
-- For reference, aadharNumber: extract if visible, else leave as ""
+- For reference, iccId: extract if visible, else leave as ""
 
 IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no code blocks.`;
 
@@ -114,11 +114,14 @@ IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no code blo
     const defaultFields = {
       imei: '', rto: '', vehicleType: '', vehicleMake: '', vehicleModel: '',
       registrationYear: '', engineNumber: '', chassisNumber: '', vehicleNumber: '',
-      customerName: '', customerMobile: '', aadharNumber: '', customerAddress: '',
+      customerName: '', customerMobile: '', iccId: '', aadharNumber: '', customerAddress: '',
       reference: '', simNumber1: '', simNumber2: ''
     };
 
     const finalData = { ...defaultFields, ...extractedData };
+    if (finalData.aadharNumber && !finalData.iccId) {
+      finalData.iccId = finalData.aadharNumber;
+    }
 
     return res.json({
       success: true,

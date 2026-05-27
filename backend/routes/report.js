@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
 
 Customer Name : ${entry.customerName || 'N/A'}
 Customer Mobile : ${entry.customerMobile || 'N/A'}
-Aadhar Number : ${entry.aadharNumber || 'N/A'}
+ICC ID : ${entry.iccId || entry.aadharNumber || 'N/A'}
 Customer Address : ${entry.customerAddress || 'N/A'}
 
 IMEI : ${entry.imei}

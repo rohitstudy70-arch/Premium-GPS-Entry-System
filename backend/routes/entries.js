@@ -29,12 +29,6 @@ router.post('/', async (req, res) => {
   try {
     const data = req.body;
     
-    // Basic validation
-    const emptyFields = Object.values(data).filter(val => !val || val.toString().trim() === '');
-    if (emptyFields.length > 0) {
-      return res.status(400).json({ success: false, message: 'Please fill in all fields.' });
-    }
-
     const now = new Date();
     const dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit' };
     const timeOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true };
@@ -42,22 +36,23 @@ router.post('/', async (req, res) => {
     const autoTime = now.toLocaleTimeString('en-IN', timeOptions);
 
     const newEntry = await Entry.create({
-      imei: data.imei.trim(),
-      rto: data.rto.trim(),
-      vehicleType: data.vehicleType.trim(),
-      vehicleMake: data.vehicleMake.trim(),
-      vehicleModel: data.vehicleModel.trim(),
-      registrationYear: data.registrationYear.trim(),
-      engineNumber: data.engineNumber.trim(),
-      chassisNumber: data.chassisNumber.trim(),
-      vehicleNumber: data.vehicleNumber.trim(),
-      reference: data.reference.trim(),
-      simNumber1: data.simNumber1.trim(),
-      simNumber2: data.simNumber2.trim(),
-      customerName: data.customerName.trim(),
-      customerMobile: data.customerMobile.trim(),
-      aadharNumber: data.aadharNumber.trim(),
-      customerAddress: data.customerAddress.trim(),
+      imei: (data.imei || '').trim(),
+      rto: (data.rto || '').trim(),
+      vehicleType: (data.vehicleType || '').trim(),
+      vehicleMake: (data.vehicleMake || '').trim(),
+      vehicleModel: (data.vehicleModel || '').trim(),
+      registrationYear: (data.registrationYear || '').trim(),
+      engineNumber: (data.engineNumber || '').trim(),
+      chassisNumber: (data.chassisNumber || '').trim(),
+      vehicleNumber: (data.vehicleNumber || '').trim(),
+      reference: (data.reference || '').trim(),
+      simNumber1: (data.simNumber1 || '').trim(),
+      simNumber2: (data.simNumber2 || '').trim(),
+      customerName: (data.customerName || '').trim(),
+      customerMobile: (data.customerMobile || '').trim(),
+      aadharNumber: (data.aadharNumber || data.iccId || '').trim(),
+      iccId: (data.iccId || data.aadharNumber || '').trim(),
+      customerAddress: (data.customerAddress || '').trim(),
       date: autoDate,
       time: autoTime,
       timestamp: now.getTime()
@@ -108,22 +103,23 @@ router.put('/:timestamp', async (req, res) => {
     
     // Filter out date, time, timestamp from being updated
     const updatePayload = {
-      imei: updatedData.imei.trim(),
-      rto: updatedData.rto.trim(),
-      vehicleType: updatedData.vehicleType.trim(),
-      vehicleMake: updatedData.vehicleMake.trim(),
-      vehicleModel: updatedData.vehicleModel.trim(),
-      registrationYear: updatedData.registrationYear.trim(),
-      engineNumber: updatedData.engineNumber.trim(),
-      chassisNumber: updatedData.chassisNumber.trim(),
-      vehicleNumber: updatedData.vehicleNumber.trim(),
-      reference: updatedData.reference.trim(),
-      simNumber1: updatedData.simNumber1.trim(),
-      simNumber2: updatedData.simNumber2.trim(),
-      customerName: updatedData.customerName ? updatedData.customerName.trim() : '',
-      customerMobile: updatedData.customerMobile ? updatedData.customerMobile.trim() : '',
-      aadharNumber: updatedData.aadharNumber ? updatedData.aadharNumber.trim() : '',
-      customerAddress: updatedData.customerAddress ? updatedData.customerAddress.trim() : ''
+      imei: (updatedData.imei || '').trim(),
+      rto: (updatedData.rto || '').trim(),
+      vehicleType: (updatedData.vehicleType || '').trim(),
+      vehicleMake: (updatedData.vehicleMake || '').trim(),
+      vehicleModel: (updatedData.vehicleModel || '').trim(),
+      registrationYear: (updatedData.registrationYear || '').trim(),
+      engineNumber: (updatedData.engineNumber || '').trim(),
+      chassisNumber: (updatedData.chassisNumber || '').trim(),
+      vehicleNumber: (updatedData.vehicleNumber || '').trim(),
+      reference: (updatedData.reference || '').trim(),
+      simNumber1: (updatedData.simNumber1 || '').trim(),
+      simNumber2: (updatedData.simNumber2 || '').trim(),
+      customerName: (updatedData.customerName || '').trim(),
+      customerMobile: (updatedData.customerMobile || '').trim(),
+      aadharNumber: (updatedData.aadharNumber || updatedData.iccId || '').trim(),
+      iccId: (updatedData.iccId || updatedData.aadharNumber || '').trim(),
+      customerAddress: (updatedData.customerAddress || '').trim()
     };
 
     const entry = await Entry.findOneAndUpdate(

@@ -22,6 +22,7 @@ const initialFormState = {
   simNumber2: '',
   customerName: '',
   customerMobile: '',
+  iccId: '',
   aadharNumber: '',
   customerAddress: '',
 };
@@ -161,16 +162,7 @@ function Dashboard({ user, onLogout }) {
     e.preventDefault();
     setError('');
 
-    // Validate all fields are filled
-    const emptyFields = Object.entries(formData).filter(
-      ([, value]) => !value.toString().trim()
-    );
-
-    if (emptyFields.length > 0) {
-      setError('Please fill in all fields before submitting.');
-      return;
-    }
-
+    // No form validation restriction: all fields are optional
     setLoading(true);
 
     try {
@@ -474,15 +466,15 @@ function Dashboard({ user, onLogout }) {
                 />
               </div>
 
-              {/* Aadhar Number */}
+              {/* ICC ID */}
               <div className="form-group">
-                <label htmlFor="field-aadharNumber">Aadhar Number</label>
+                <label htmlFor="field-iccId">ICC ID</label>
                 <input
-                  id="field-aadharNumber"
+                  id="field-iccId"
                   type="text"
-                  name="aadharNumber"
-                  placeholder="Enter 12-digit Aadhar number"
-                  value={formData.aadharNumber || ''}
+                  name="iccId"
+                  placeholder="Enter ICC ID"
+                  value={formData.iccId || formData.aadharNumber || ''}
                   onChange={handleChange}
                 />
               </div>
