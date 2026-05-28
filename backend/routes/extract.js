@@ -30,7 +30,9 @@ const getApiKeys = () => {
       .filter(key => key && key !== 'your_gemini_api_key_here');
   }
   if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here') {
-    return [process.env.GEMINI_API_KEY.trim()];
+    return process.env.GEMINI_API_KEY.split(',')
+      .map(key => key.trim())
+      .filter(key => key && key !== 'your_gemini_api_key_here');
   }
   return [];
 };
