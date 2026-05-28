@@ -22,7 +22,18 @@ const upload = multer({
 });
 
 // --- Gemini AI Setup ---
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// We support both a single key and comma-separated multiple keys in env for automatic rotation
+const getApiKeys = () => {
+  if (process.env.GEMINI_API_KEYS) {
+    return process.env.GEMINI_API_KEYS.split(',')
+      .map(key => key.trim())
+      .filter(key => key && key !== 'your_gemini_api_key_here');
+  }
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here') {
+    return [process.env.GEMINI_API_KEY.trim()];
+  }
+  return [];
+};
 
 // POST /api/extract - Extract vehicle data from image or PDF
 router.post('/', upload.single('image'), async (req, res) => {
@@ -31,14 +42,13 @@ router.post('/', upload.single('image'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Koi file upload nahi hui.' });
     }
 
-    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
+    const apiKeys = getApiKeys();
+    if (apiKeys.length === 0) {
       return res.status(500).json({ 
         success: false, 
-        message: 'GEMINI_API_KEY .env file mein set nahi hai. Aapna API key add karein.' 
+        message: 'GEMINI_API_KEY ya GEMINI_API_KEYS .env file mein set nahi hai. Kripya add karein.' 
       });
     }
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = `You are a vehicle document OCR expert. Analyze this document (image or PDF, such as an RC book, vehicle document, or any vehicle-related document) and extract the following information.
 
@@ -90,8 +100,48 @@ IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no code blo
       },
     };
 
-    const result = await model.generateContent([prompt, filePart]);
-    const responseText = result.response.text().trim();
+    let responseText = '';
+    let apiSuccess = false;
+    let lastError = null;
+
+    // Loop through all keys to try extraction (Key Rotation)
+    for (let i = 0; i < apiKeys.length; i++) {
+      const activeKey = apiKeys[i];
+      try {
+        console.log(`[AI Auto-Fill] Trying Gemini extraction with key index ${i + 1} of ${apiKeys.length}...`);
+        const genAI = new GoogleGenerativeAI(activeKey);
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        
+        const result = await model.generateContent([prompt, filePart]);
+        responseText = result.response.text().trim();
+        apiSuccess = true;
+        console.log(`[AI Auto-Fill] Success with API Key index ${i + 1}!`);
+        break; // Exit loop on success
+      } catch (err) {
+        lastError = err;
+        console.error(`[AI Auto-Fill] Key index ${i + 1} failed:`, err.message || err);
+        // Continue loop to try next key
+      }
+    }
+
+    if (!apiSuccess) {
+      const errMsg = lastError?.message || 'Unknown Gemini error';
+      if (
+        errMsg.includes('429') || 
+        errMsg.includes('Quota') || 
+        errMsg.includes('quota') || 
+        errMsg.includes('limit')
+      ) {
+        return res.status(429).json({
+          success: false,
+          message: 'Saari configured Gemini API keys ki limits exceed ho chuki hain. Kripya Google AI Studio me aur keys banakar add karein ya thodi der baad try karein.'
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message: `Gemini AI error: ${errMsg}`
+      });
+    }
 
     // Parse the JSON response
     let extractedData;
@@ -131,11 +181,6 @@ IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no code blo
 
   } catch (error) {
     console.error('Extract route error:', error);
-    
-    if (error.message?.includes('API_KEY')) {
-      return res.status(401).json({ success: false, message: 'Gemini API key invalid hai. Please check karein.' });
-    }
-
     return res.status(500).json({
       success: false,
       message: error.message || 'File process karne mein error aaya. Dobara try karein.'
