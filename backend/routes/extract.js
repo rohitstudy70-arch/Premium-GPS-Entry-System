@@ -106,23 +106,74 @@ IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no code blo
     let apiSuccess = false;
     let lastError = null;
 
-    // Loop through all keys to try extraction (Key Rotation)
-    for (let i = 0; i < apiKeys.length; i++) {
-      const activeKey = apiKeys[i];
+    // --- Try Groq Vision first if it is an image and GROQ_API_KEY is configured ---
+    if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim() !== '' && fileMimeType.startsWith('image/')) {
       try {
-        console.log(`[AI Auto-Fill] Trying Gemini extraction with key index ${i + 1} of ${apiKeys.length}...`);
-        const genAI = new GoogleGenerativeAI(activeKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-        
-        const result = await model.generateContent([prompt, filePart]);
-        responseText = result.response.text().trim();
+        console.log('[AI Auto-Fill] Trying Groq Llama 3.2 Vision extraction...');
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.GROQ_API_KEY.trim()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'llama-3.2-11b-vision-preview',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: prompt
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:${fileMimeType};base64,${fileBase64}`
+                    }
+                  }
+                ]
+              }
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.1
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Groq HTTP error! status: ${response.status}`);
+        }
+
+        const resData = await response.json();
+        responseText = resData.choices[0].message.content.trim();
         apiSuccess = true;
-        console.log(`[AI Auto-Fill] Success with API Key index ${i + 1}!`);
-        break; // Exit loop on success
+        console.log('[AI Auto-Fill] Success with Groq Vision!');
       } catch (err) {
         lastError = err;
-        console.error(`[AI Auto-Fill] Key index ${i + 1} failed:`, err.message || err);
-        // Continue loop to try next key
+        console.error('[AI Auto-Fill] Groq Vision failed, falling back to Gemini:', err.message || err);
+      }
+    }
+
+    // --- Fallback to Gemini API if Groq fails or is not configured (or if it's a PDF) ---
+    if (!apiSuccess) {
+      // Loop through all keys to try extraction (Key Rotation)
+      for (let i = 0; i < apiKeys.length; i++) {
+        const activeKey = apiKeys[i];
+        try {
+          console.log(`[AI Auto-Fill] Trying Gemini extraction with key index ${i + 1} of ${apiKeys.length}...`);
+          const genAI = new GoogleGenerativeAI(activeKey);
+          const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+          
+          const result = await model.generateContent([prompt, filePart]);
+          responseText = result.response.text().trim();
+          apiSuccess = true;
+          console.log(`[AI Auto-Fill] Success with API Key index ${i + 1}!`);
+          break; // Exit loop on success
+        } catch (err) {
+          lastError = err;
+          console.error(`[AI Auto-Fill] Key index ${i + 1} failed:`, err.message || err);
+          // Continue loop to try next key
+        }
       }
     }
 
