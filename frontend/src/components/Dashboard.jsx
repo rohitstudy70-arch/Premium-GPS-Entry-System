@@ -4,7 +4,7 @@
 // ==========================================
 
 import { useState, useEffect, useRef } from 'react';
-import { submitEntry, getTodayEntries, getTotalEntriesCount, editEntry, extractFromImage, resetAllEntries, restoreEntries } from '../api';
+import { submitEntry, getTodayEntries, getTotalEntriesCount, editEntry, extractFromImage, resetAllEntries, restoreEntries, extractFromText } from '../api';
 
 // Initial empty form state
 const initialFormState = {
@@ -47,6 +47,11 @@ function Dashboard({ user, onLogout }) {
   const [extractSuccess, setExtractSuccess] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Quick Text Paste Auto-Fill States
+  const [activeTab, setActiveTab] = useState('file'); // 'file' or 'text'
+  const [pastedText, setPastedText] = useState('');
+  const [parsingText, setParsingText] = useState(false);
 
   // Fetch today's entries
   const fetchTodayEntries = async () => {
@@ -92,6 +97,8 @@ function Dashboard({ user, onLogout }) {
     setFileType(null);
     setExtractSuccess(false);
     setExtractError('');
+    setPastedText('');
+    setParsingText(false);
   };
 
   // --- File Upload & Extraction Handlers ---
@@ -167,6 +174,333 @@ function Dashboard({ user, onLogout }) {
       setExtractError(msg);
     } finally {
       setExtracting(false);
+    }
+  };
+
+  // --- Quick Text Paste Parser & Handlers ---
+  const parseTextLocally = (text) => {
+    const result = {
+      imei: '',
+      rto: '',
+      vehicleType: '',
+      vehicleMake: '',
+      vehicleModel: '',
+      registrationYear: '',
+      engineNumber: '',
+      chassisNumber: '',
+      vehicleNumber: '',
+      customerName: '',
+      customerMobile: '',
+      iccId: '',
+      customerAddress: '',
+      reference: '',
+      simNumber1: '',
+      simNumber2: ''
+    };
+
+    if (!text || text.trim() === '') return result;
+
+    // Normalize text and split into lines
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+
+    // Helper function to extract field based on label
+    // Supports both same line ("Label: Value") and next line ("Label \n Value")
+    const extractField = (labels, regexVal = null) => {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Find if line contains any of the labels as a word/prefix
+        const matchedLabel = labels.find(label => {
+          const esc = label.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const rx = new RegExp('\\b' + esc + '\\b', 'i');
+          return rx.test(line);
+        });
+
+        if (matchedLabel) {
+          // Check same line: e.g. "Label: Value" or "Label Value"
+          let sameLineText = line.substring(line.toLowerCase().indexOf(matchedLabel.toLowerCase()) + matchedLabel.length);
+          // Strip leading colons, equals, dashes, spaces
+          sameLineText = sameLineText.replace(/^[:\s=-]+/g, '').trim();
+
+          if (sameLineText.length > 0) {
+            if (regexVal) {
+              const m = sameLineText.match(regexVal);
+              if (m) return m[1] || m[0];
+            } else {
+              return sameLineText;
+            }
+          }
+
+          // Check next line if same line was empty (e.g. key-value tables)
+          if (i + 1 < lines.length) {
+            const nextLine = lines[i + 1].trim();
+            // Ensure next line is not another label/header
+            if (nextLine.length > 0 && !nextLine.includes(':')) {
+              if (regexVal) {
+                const m = nextLine.match(regexVal);
+                if (m) return m[1] || m[0];
+              } else {
+                return nextLine;
+              }
+            }
+          }
+        }
+      }
+      return '';
+    };
+
+    // 1. Vehicle Registration Number / Plate Number
+    result.vehicleNumber = extractField(
+      ['registration no', 'reg no', 'regn no', 'vehicle no', 'plate no', 'vehicle number', 'reg. no', 'reg.no', 'vehicle.no'],
+      /([A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}|[A-Z0-9-]{6,15})/i
+    );
+
+    // Fallback Registration Number: Search for raw pattern of Indian plate format in text
+    if (!result.vehicleNumber) {
+      const rawPlateRx = /\b([A-Z]{2}\s*[0-9]{1,2}\s*[A-Z]{1,3}\s*[0-9]{4})\b/i;
+      for (const line of lines) {
+        const match = line.match(rawPlateRx);
+        if (match) {
+          result.vehicleNumber = match[1].replace(/\s+/g, '').toUpperCase();
+          break;
+        }
+      }
+    }
+
+    // 2. Chassis Number
+    result.chassisNumber = extractField(
+      ['chassis no', 'chassis number', 'chasis no', 'vin', 'chasis', 'chassis'],
+      /([A-HJ-NPR-Z0-9]{10,17})/i
+    );
+
+    // 3. Engine Number
+    result.engineNumber = extractField(
+      ['engine no', 'engine number', 'eng no', 'engine', 'motor no'],
+      /([A-Z0-9-]{5,18})/i
+    );
+
+    // 4. Owner / Customer Name
+    result.customerName = extractField(
+      ['owner name', 'customer name', 'owner\'s name', 'cust name', 'owner', 'customer', 'registered owner']
+    );
+
+    // 5. Customer Mobile
+    result.customerMobile = extractField(
+      ['customer mobile', 'mobile', 'phone', 'contact', 'mobile no', 'mobile number'],
+      /([6-9][0-9]{9})/
+    );
+
+    // 6. IMEI
+    result.imei = extractField(
+      ['imei', 'imei no', 'imei number', 'device imei'],
+      /([0-9]{15})/
+    );
+
+    // 7. ICCID / SIM Card Number
+    result.iccId = extractField(
+      ['iccid', 'iccid no', 'card no', 'card number', 'sim iccid'],
+      /(89[0-9]{17,18})/
+    );
+
+    // 8. SIM Phone Numbers
+    result.simNumber1 = extractField(
+      ['sim 1', 'sim no 1', 'sim1', 'sim number 1', 'mobile 1'],
+      /([6-9][0-9]{9})/
+    );
+    result.simNumber2 = extractField(
+      ['sim 2', 'sim no 2', 'sim2', 'sim number 2', 'mobile 2'],
+      /([6-9][0-9]{9})/
+    );
+
+    // 9. Registration Year
+    result.registrationYear = extractField(
+      ['registration year', 'mfg year', 'year of mfg', 'year', 'reg year'],
+      /(20[0-9]{2}|19[0-9]{2})/
+    );
+
+    // Extract year from registration date if year field not found directly
+    if (!result.registrationYear) {
+      const regDate = extractField(['registration date', 'reg date', 'regn date']);
+      if (regDate) {
+        const yrMatch = regDate.match(/\b(20[0-9]{2}|19[0-9]{2})\b/);
+        if (yrMatch) result.registrationYear = yrMatch[1];
+      }
+    }
+
+    // 10. Maker / Vehicle Make ( Tata, Mahindra, Maruti, etc. )
+    result.vehicleMake = extractField(
+      ['maker name', 'maker', 'make', 'manufacturer', 'brand', 'maker/model']
+    );
+
+    // 11. Model
+    result.vehicleModel = extractField(
+      ['model name', 'model', 'vehicle model']
+    );
+
+    // 12. Vehicle Type (Car, Bus, LMV, HGV, etc.)
+    result.vehicleType = extractField(
+      ['vehicle class', 'class of vehicle', 'type', 'vehicle type', 'class']
+    );
+
+    // 13. RTO
+    result.rto = extractField(
+      ['rto', 'rto office', 'registering authority']
+    );
+
+    // 14. Customer Address
+    result.customerAddress = extractField(
+      ['address', 'owner address', 'permanent address']
+    );
+
+    // 15. Reference
+    result.reference = extractField(
+      ['reference', 'ref', 'ref no']
+    );
+
+    // --- Post-Processing & Fallback Checks ---
+
+    // Split Combined Maker/Model: if Maker is "TATA MOTORS LTD / NEXON EV"
+    if (result.vehicleMake && result.vehicleMake.includes('/')) {
+      const parts = result.vehicleMake.split('/');
+      result.vehicleMake = parts[0].trim();
+      if (!result.vehicleModel) {
+        result.vehicleModel = parts[1].trim();
+      }
+    }
+
+    // Fallback for Chassis Number
+    if (!result.chassisNumber) {
+      const vinRx = /\b([A-HJ-NPR-Z0-9]{17})\b/i;
+      for (const line of lines) {
+        const match = line.match(vinRx);
+        if (match && !match[1].startsWith('89') && !/^[0-9]{15}$/.test(match[1])) {
+          result.chassisNumber = match[1].toUpperCase();
+          break;
+        }
+      }
+    }
+
+    // Fallback for Engine Number
+    if (!result.engineNumber) {
+      for (const line of lines) {
+        if (/eng/i.test(line) && !line.includes(':')) {
+          const match = line.match(/\b([A-Z0-9]{6,15})\b/i);
+          if (match) result.engineNumber = match[1];
+        }
+      }
+    }
+
+    // Fallback for IMEI
+    if (!result.imei) {
+      for (const line of lines) {
+        const match = line.match(/\b([0-9]{15})\b/);
+        if (match) {
+          result.imei = match[1];
+          break;
+        }
+      }
+    }
+
+    // Fallback for ICCID
+    if (!result.iccId) {
+      for (const line of lines) {
+        const match = line.match(/\b(89[0-9]{17,18})\b/);
+        if (match) {
+          result.iccId = match[1];
+          break;
+        }
+      }
+    }
+
+    // Fallback for Customer Mobile
+    if (!result.customerMobile) {
+      for (const line of lines) {
+        const match = line.match(/\b([6-9][0-9]{9})\b/);
+        if (match) {
+          const num = match[1];
+          if (num !== result.simNumber1 && num !== result.simNumber2) {
+            result.customerMobile = num;
+            break;
+          }
+        }
+      }
+    }
+
+    // Clean up Plate/Vehicle registration format
+    if (result.vehicleNumber) {
+      result.vehicleNumber = result.vehicleNumber.replace(/[^A-Z0-9]/ig, '').toUpperCase();
+    }
+
+    return result;
+  };
+
+  const handleLocalFastFill = () => {
+    if (!pastedText || pastedText.trim() === '') {
+      setExtractError('Pehle text box mein data paste karein.');
+      return;
+    }
+    setExtractError('');
+    setExtractSuccess(false);
+
+    try {
+      const extracted = parseTextLocally(pastedText);
+      let filledCount = 0;
+
+      setFormData(prev => {
+        const merged = { ...prev };
+        Object.keys(extracted).forEach(key => {
+          if (extracted[key] && extracted[key].toString().trim() !== '') {
+            merged[key] = extracted[key];
+            filledCount++;
+          }
+        });
+        return merged;
+      });
+
+      if (filledCount > 0) {
+        setExtractSuccess(true);
+        // Scroll to form
+        document.querySelector('.form-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        setExtractError('Text mein se vehicle details nahi mil sakin. Kripya dhyan se check karein ya AI Auto-Fill try karein.');
+      }
+    } catch (err) {
+      setExtractError('Local parsing mein error aaya: ' + err.message);
+    }
+  };
+
+  const handleExtractTextAI = async () => {
+    if (!pastedText || pastedText.trim() === '') {
+      setExtractError('Pehle text box mein data paste karein.');
+      return;
+    }
+    setParsingText(true);
+    setExtractError('');
+    setExtractSuccess(false);
+
+    try {
+      const response = await extractFromText({ text: pastedText });
+
+      if (response.data.success) {
+        const extracted = response.data.data;
+        setFormData(prev => {
+          const merged = { ...prev };
+          Object.keys(extracted).forEach(key => {
+            if (extracted[key] && extracted[key].toString().trim() !== '') {
+              merged[key] = extracted[key];
+            }
+          });
+          return merged;
+        });
+        setExtractSuccess(true);
+        // Scroll to form
+        document.querySelector('.form-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    } catch (err) {
+      const msg = err.response?.data?.message || 'AI Text process karne mein error aaya. Local fast fill try karein.';
+      setExtractError(msg);
+    } finally {
+      setParsingText(false);
     }
   };
 
@@ -347,93 +681,170 @@ function Dashboard({ user, onLogout }) {
           </div>
         </div>
 
-        {/* --- Image/PDF Upload Section --- */}
+        {/* --- Image/PDF Upload & Quick Text Paste Section --- */}
         <div className="image-upload-card">
           <div className="image-upload-header">
-            <div className="image-upload-icon">📄</div>
+            <div className="image-upload-icon">⚡</div>
             <div>
-              <div className="image-upload-title">Smart Document Auto-Fill</div>
-              <div className="image-upload-subtitle">RC Book / Vehicle Document ki photo ya PDF upload karo — AI automatically form fill kar dega</div>
+              <div className="image-upload-title">Smart Auto-Fill Assistant</div>
+              <div className="image-upload-subtitle">RC Book / Vehicle Document ka text paste karein ya file upload karein — data automatically fill ho jayega</div>
             </div>
           </div>
 
-          <div className="image-upload-body">
-            {/* Drop Zone */}
-            <div
-              className={`drop-zone ${dragOver ? 'drag-over' : ''} ${(filePreview || selectedFile) ? 'has-image' : ''}`}
-              onClick={() => fileInputRef.current?.click()}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
+          {/* Tab Selection */}
+          <div className="autofill-tabs">
+            <button 
+              type="button" 
+              className={`autofill-tab-btn ${activeTab === 'file' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('file'); setExtractError(''); setExtractSuccess(false); }}
             >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                style={{ display: 'none' }}
-                onChange={handleFileInput}
-                id="image-upload-input"
-              />
-              {selectedFile ? (
-                <div className="image-preview-container">
-                  {fileType === 'image' && filePreview ? (
-                    <img src={filePreview} alt="Uploaded document" className="image-preview" />
+              📄 Upload File (Image/PDF)
+            </button>
+            <button 
+              type="button" 
+              className={`autofill-tab-btn ${activeTab === 'text' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('text'); setExtractError(''); setExtractSuccess(false); }}
+            >
+              ✍️ Copy-Paste Text (No Limits)
+            </button>
+          </div>
+
+          <div className="image-upload-body">
+            {activeTab === 'file' ? (
+              <>
+                {/* Drop Zone */}
+                <div
+                  className={`drop-zone ${dragOver ? 'drag-over' : ''} ${(filePreview || selectedFile) ? 'has-image' : ''}`}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,application/pdf"
+                    style={{ display: 'none' }}
+                    onChange={handleFileInput}
+                    id="image-upload-input"
+                  />
+                  {selectedFile ? (
+                    <div className="image-preview-container">
+                      {fileType === 'image' && filePreview ? (
+                        <img src={filePreview} alt="Uploaded document" className="image-preview" />
+                      ) : (
+                        <div className="pdf-preview-placeholder" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '150px', padding: '20px', color: '#1e293b' }}>
+                          <span style={{ fontSize: '48px' }}>📕</span>
+                          <span style={{ fontWeight: 'bold', marginTop: '10px', wordBreak: 'break-all', textAlign: 'center' }}>{selectedFile.name}</span>
+                          <span style={{ fontSize: '12px', opacity: 0.7 }}>({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                        </div>
+                      )}
+                      <div className="image-preview-overlay">
+                        <span>🔄 Click to change file</span>
+                      </div>
+                    </div>
                   ) : (
-                    <div className="pdf-preview-placeholder" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '150px', padding: '20px', color: '#1e293b' }}>
-                      <span style={{ fontSize: '48px' }}>📕</span>
-                      <span style={{ fontWeight: 'bold', marginTop: '10px', wordBreak: 'break-all', textAlign: 'center' }}>{selectedFile.name}</span>
-                      <span style={{ fontSize: '12px', opacity: 0.7 }}>({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                    <div className="drop-zone-placeholder">
+                      <div className="drop-zone-icon">📄</div>
+                      <div className="drop-zone-text">Image ya PDF yahan drop karo ya click karo</div>
+                      <div className="drop-zone-hint">JPG, PNG, WEBP, PDF supported • Max 10MB</div>
                     </div>
                   )}
-                  <div className="image-preview-overlay">
-                    <span>🔄 Click to change file</span>
-                  </div>
                 </div>
-              ) : (
-                <div className="drop-zone-placeholder">
-                  <div className="drop-zone-icon">📄</div>
-                  <div className="drop-zone-text">Image ya PDF yahan drop karo ya click karo</div>
-                  <div className="drop-zone-hint">JPG, PNG, WEBP, PDF supported • Max 10MB</div>
-                </div>
-              )}
-            </div>
 
-            {/* Action & Feedback */}
-            <div className="image-actions">
-              {extractError && (
-                <div className="alert alert-error" style={{ marginBottom: '10px' }}>
-                  ❌ {extractError}
+                {/* File Action Buttons */}
+                <div className="image-actions">
+                  {extractError && (
+                    <div className="alert alert-error" style={{ marginBottom: '10px', width: '100%' }}>
+                      ❌ {extractError}
+                    </div>
+                  )}
+                  {extractSuccess && (
+                    <div className="alert alert-success" style={{ marginBottom: '10px', width: '100%' }}>
+                      ✅ Data successfully extract ho gaya! Form check karein.
+                    </div>
+                  )}
+                  <button
+                    id="extract-image-button"
+                    type="button"
+                    className="btn-extract"
+                    onClick={handleExtract}
+                    disabled={extracting || !selectedFile}
+                  >
+                    {extracting ? (
+                      <><span className="spinner" /> AI Process kar raha hai...</>
+                    ) : (
+                      <>🔍 File se Auto-Fill karo</>
+                    )}
+                  </button>
+                  {selectedFile && (
+                    <button
+                      type="button"
+                      className="btn-reset"
+                      style={{ marginLeft: '10px' }}
+                      onClick={() => { setSelectedFile(null); setFilePreview(null); setFileType(null); setExtractSuccess(false); setExtractError(''); }}
+                    >
+                      🗑️ Remove
+                    </button>
+                  )}
                 </div>
-              )}
-              {extractSuccess && (
-                <div className="alert alert-success" style={{ marginBottom: '10px' }}>
-                  ✅ Data successfully extract ho gaya! Form check karein.
+              </>
+            ) : (
+              <>
+                {/* Text Paste Field */}
+                <textarea
+                  className="paste-textarea"
+                  placeholder="Kahin se bhi copy kiya hua vehicle data / RC details yahan paste karein (jaise WhatsApp message, PDF text, OCR text)..."
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                />
+
+                {/* Text Actions */}
+                <div className="image-actions">
+                  {extractError && (
+                    <div className="alert alert-error" style={{ marginBottom: '10px', width: '100%' }}>
+                      ❌ {extractError}
+                    </div>
+                  )}
+                  {extractSuccess && (
+                    <div className="alert alert-success" style={{ marginBottom: '10px', width: '100%' }}>
+                      ✅ Data successfully extract ho gaya! Form check karein.
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="btn-local-fast"
+                    onClick={handleLocalFastFill}
+                    disabled={!pastedText || pastedText.trim() === ''}
+                  >
+                    ⚡ Fast Local Fill (No Limit)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-extract"
+                    style={{ marginLeft: '10px' }}
+                    onClick={handleExtractTextAI}
+                    disabled={parsingText || !pastedText || pastedText.trim() === ''}
+                  >
+                    {parsingText ? (
+                      <><span className="spinner" /> AI Parse kar raha hai...</>
+                    ) : (
+                      <>🤖 AI Auto-Fill (Text)</>
+                    )}
+                  </button>
+                  {pastedText && (
+                    <button
+                      type="button"
+                      className="btn-reset"
+                      style={{ marginLeft: '10px' }}
+                      onClick={() => { setPastedText(''); setExtractSuccess(false); setExtractError(''); }}
+                    >
+                      🗑️ Clear Text
+                    </button>
+                  )}
                 </div>
-              )}
-              <button
-                id="extract-image-button"
-                type="button"
-                className="btn-extract"
-                onClick={handleExtract}
-                disabled={extracting || !selectedFile}
-              >
-                {extracting ? (
-                  <><span className="spinner" /> AI Process kar raha hai...</>
-                ) : (
-                  <>🔍 File se Auto-Fill karo</>
-                )}
-              </button>
-              {selectedFile && (
-                <button
-                  type="button"
-                  className="btn-reset"
-                  style={{ marginLeft: '10px' }}
-                  onClick={() => { setSelectedFile(null); setFilePreview(null); setFileType(null); setExtractSuccess(false); setExtractError(''); }}
-                >
-                  🗑️ Remove
-                </button>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
 

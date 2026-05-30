@@ -29,5 +29,8 @@ export const extractFromImage = (formData) => api.post('/extract', formData, {
   headers: { 'Content-Type': 'multipart/form-data' },
   timeout: 30000, // 30 seconds for AI processing
 });
+export const extractFromText = (payload) => api.post('/extract/text', payload, {
+  timeout: 30000, // 30 seconds for AI processing
+});
 
 export default api;

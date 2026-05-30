@@ -859,3 +859,88 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
+/* --- Quick Text Paste Tabs & UI --- */
+.autofill-tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 6px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(79, 70, 229, 0.08);
+}
+
+.autofill-tab-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.autofill-tab-btn:hover {
+  color: var(--color-text-main);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.autofill-tab-btn.active {
+  background: var(--color-white);
+  color: var(--color-primary);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.1);
+}
+
+.paste-textarea {
+  width: 100%;
+  min-height: 160px;
+  padding: 16px;
+  border: 1.5px solid rgba(79, 70, 229, 0.15);
+  border-radius: var(--radius-lg);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  background: rgba(255, 255, 255, 0.8);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.paste-textarea:focus {
+  background: var(--color-white);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
+}
+
+.btn-local-fast {
+  padding: 13px 24px;
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: white;
+  border: none;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+}
+
+.btn-local-fast:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+.btn-local-fast:active {
+  transform: translateY(0);
+}
+
